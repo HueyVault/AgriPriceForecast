@@ -3,7 +3,7 @@
 import pandas as pd
 import os
 from typing import List, Dict, Union
-
+from datetime import datetime
 
 '''
     품목명        품종명        거래단위      등급
@@ -56,3 +56,31 @@ def filter_agri_products(csv_file_path: str, products_info: Dict[str, Dict[str, 
         dataframes.append(filtered_df)
     
     return dataframes
+
+
+def save_dataframes_to_csv(dataframes: List[pd.DataFrame], product_names: List[str], base_output_dir: str):
+    """
+    DataFrame 리스트를 각각의 CSV 파일로 저장합니다.
+    실행 날짜와 시간으로 폴더를 생성합니다.
+
+    :param dataframes: 저장할 DataFrame 리스트
+    :param product_names: 각 DataFrame에 해당하는 제품 이름 리스트
+    :param base_output_dir: 기본 출력 디렉토리 경로
+    :return: 생성된 폴더의 경로
+    """
+    # 현재 날짜와 시간으로 폴더명 생성
+    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = os.path.join(base_output_dir, current_time)
+
+    # 출력 디렉토리가 없으면 생성
+    os.makedirs(output_dir, exist_ok=True)
+
+    for df, product_name in zip(dataframes, product_names):
+        # 파일명에 사용할 수 없는 문자 제거 또는 대체
+        safe_product_name = ''.join(c if c.isalnum() or c in ('-', '_') else '_' for c in product_name)
+        file_path = os.path.join(output_dir, f"{safe_product_name}.csv")
+        
+        # DataFrame을 CSV 파일로 저장
+        df.to_csv(file_path, index=False, encoding='utf-8-sig')
+        print(f"{product_name} 데이터가 {file_path}에 저장되었습니다.")
+
