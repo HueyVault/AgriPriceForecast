@@ -11,6 +11,7 @@ import models.prophet_price_predictor as pp
 import models.LSTM_price_predicator_multi as lstm_pp_multi
 import models.LSTM_price_predicator as lstm_pp
 from agripriceforecast.config_reader import read_config
+import models.xgboost_price_predictor as xgb_pp
 
 
 def convert_to_date(date_str):
@@ -114,7 +115,7 @@ def main():
     #print(test_dataframes[0])
     # # 데이터 시각화
     # # 여러 제품 비교 그래프
-    plot_multiple_products(filtered_dfs, list(products_info.keys()), "시점", "평균가격(원)", "제품 가격 비교")
+    # plot_multiple_products(filtered_dfs, list(products_info.keys()), "시점", "평균가격(원)", "제품 가격 비교")
 
     # # 3. 데이터 전처리
 
@@ -123,10 +124,24 @@ def main():
     # dl.save_dataframes_to_csv(filtered_dfs, list(products_info.keys()), base_output_dir)
 
     # 4. 모델 학습
+    # XGBoost 모델 학습 및 예측
+    xgboost_predictions = xgb_pp.train_and_predict_xgboost(filtered_dfs, test_dataframes, products_info, "시점", "평균가격(원)")
+    
+    # 예측 결과 출력
+    # for product, pred_list in xgboost_predictions.items():
+    #     print(f"\n{product} XGBoost 예측 결과:")
+    #     for i, pred_df in enumerate(pred_list):
+    #         print(f"테스트 데이터셋 {i+1}:")
+    #         print(pred_df.tail())
+
+    # 결과 시각화
+    xgb_pp.plot_xgboost_forecast(xgboost_predictions, test_dataframes, "시점", "평균가격(원)", base_output_dir)
+
+
     # LSTM 모델 학습 및 예측
     # lstm_models, lstm_scalers, lstm_predictions = train_and_predict_lstm(filtered_dfs, products_info, base_output_dir)
     # lstm_models_test, lstm_scalers_test, lstm_predictions_test = train_and_predict_lstm_with_test_multi(filtered_dfs, test_dataframes, products_info, None)
-    # LSTM 모델 학습 및 예측 (첫 번째 테스트 데이터셋 사용)
+    # # LSTM 모델 학습 및 예측 (첫 번째 테스트 데이터셋 사용)
     # test_index = 0
     # predictions = lstm_pp.train_and_predict(filtered_dfs, products_info, test_dataframes, "시점", "평균가격(원)", test_index=test_index)
     
@@ -145,9 +160,9 @@ def main():
     # # 결과 시각화
     # lstm_pp.plot_lstm_forecast_with_test(predictions, test_dataframes, "시점", "평균가격(원)", test_index=test_index, output_dir=None)
     
-    ## 예측 결과만 시각화
-    # lstm_pp.plot_lstm_forecast_only(predictions, "시점", "평균가격(원)", output_dir=None)
-    print("LSTM 모델 학습 및 예측이 완료되었습니다.")
+    # ## 예측 결과만 시각화
+    # # lstm_pp.plot_lstm_forecast_only(predictions, "시점", "평균가격(원)", output_dir=None)
+    # print("LSTM 모델 학습 및 예측이 완료되었습니다.")
 
     # 5. 모델 평가
 
