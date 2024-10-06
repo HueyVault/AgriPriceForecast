@@ -3,6 +3,15 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import tensorflow_probability as tfp
+import tf_keras
+
+tfd = tfp.distributions
+tfpl = tfp.layers
+
+print(f"TensorFlow version: {tf.__version__}")
+print(f"TensorFlow Probability version: {tfp.__version__}")
+print(f"TF-Keras version: {tf_keras.__version__}")
 
 def create_dataset(dataset, time_step=1):
     """
@@ -20,16 +29,6 @@ def create_dataset(dataset, time_step=1):
     return np.array(dataX), np.array(dataY)
 
 def train_lstm_model(data, product_names, time_step=60, epochs=100, batch_size=32):
-    """
-    여러 품목의 데이터를 하나의 LSTM 모델로 학습합니다.
-
-    :param data: 모든 품목의 가격 데이터가 포함된 2D 배열
-    :param product_names: 품목 이름 리스트
-    :param time_step: 시퀀스 길이
-    :param epochs: 학습 에포크 수
-    :param batch_size: 배치 크기
-    :return: 학습된 모델, 스케일러, 학습 히스토리
-    """
     # 데이터 전처리
     scaler = MinMaxScaler(feature_range=(0,1))
     data_scaled = scaler.fit_transform(data)
@@ -47,31 +46,28 @@ def train_lstm_model(data, product_names, time_step=60, epochs=100, batch_size=3
         tf.keras.layers.LSTM(100, return_sequences=True, input_shape=(time_step, len(product_names))),
         tf.keras.layers.LSTM(100, return_sequences=True),
         tf.keras.layers.LSTM(100),
-        tf.keras.layers.Dense(len(product_names))
+        tf.keras.layers.Dense(len(product_names) * 2)  # 평균과 표준편차를 위해 출력 크기를 2배로
     ])
-    model.compile(loss='mean_squared_error', optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
+
+    def negative_log_likelihood(y_true, y_pred):
+        n_dims = len(product_names)
+        mu = y_pred[:, :n_dims]
+        sigma = tf.math.softplus(y_pred[:, n_dims:])  # 표준편차는 항상 양수여야 함
+        dist = tfp.distributions.Normal(loc=mu, scale=sigma)
+        return -dist.log_prob(y_true)
+
+    model.compile(loss=negative_log_likelihood, optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
     
     # 조기 종료 콜백 추가
     early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
     
     # 모델 학습
-    for epoch in range(epochs):
-        history = model.fit(X_train, y_train, 
-                            epochs=1, 
-                            batch_size=batch_size, 
-                            validation_data=(X_val, y_val),
-                            verbose=0)
-        
-        # 각 에포크마다 손실 값 확인
-        train_loss = history.history['loss'][0]
-        val_loss = history.history['val_loss'][0]
-        
-        if np.isnan(train_loss) or np.isnan(val_loss):
-            print(f"Warning: 에포크 {epoch+1}에서 NaN 손실 발생. 학습 중단.")
-            break
-        
-        # print(f"에포크 {epoch+1}/{epochs}, 훈련 손실: {train_loss:.4f}, 검증 손실: {val_loss:.4f}")
-
+    history = model.fit(X_train, y_train, 
+                        epochs=epochs, 
+                        batch_size=batch_size, 
+                        validation_data=(X_val, y_val),
+                        callbacks=[early_stopping],
+                        verbose=1)
     
     # 학습 결과 평가
     train_loss = model.evaluate(X_train, y_train, verbose=0)
@@ -79,31 +75,23 @@ def train_lstm_model(data, product_names, time_step=60, epochs=100, batch_size=3
     print(f"Train Loss: {train_loss:.4f}")
     print(f"Validation Loss: {val_loss:.4f}")
     
-    # # 학습 곡선 그리기
-    # plt.figure(figsize=(12, 6))
-    # plt.plot(history.history['loss'], label='Train Loss')
-    # plt.plot(history.history['val_loss'], label='Validation Loss')
-    # plt.title('Model Loss')
-    # plt.xlabel('Epoch')
-    # plt.ylabel('Loss')
-    # plt.legend()
-    # plt.show()
-    
     return model, scaler, history
 
-def predict_prices(model, scaler, last_sequence):
-    """
-    학습된 모델을 사용하여 다음 가격을 예측합니다.
-
-    :param model: 학습된 LSTM 모델
-    :param scaler: 데이터 스케일러
-    :param last_sequence: 마지막 시퀀스 데이터
-    :return: 예측된 다음 가격
-    """
+def predict_prices(model, scaler, last_sequence, num_samples=100):
     X = last_sequence.reshape((1, last_sequence.shape[0], last_sequence.shape[1]))
-    predicted = model.predict(X)
-    print(predicted)
-    return scaler.inverse_transform(predicted)[0]
+    y_pred = model.predict(X)
+    n_dims = len(y_pred[0]) // 2
+    mu = y_pred[0, :n_dims]
+    sigma = tf.math.softplus(y_pred[0, n_dims:])
+    dist = tfp.distributions.Normal(loc=mu, scale=sigma)
+    samples = dist.sample(num_samples)
+    mean_prediction = tf.reduce_mean(samples, axis=0)
+    std_prediction = tf.math.reduce_std(samples, axis=0)
+    
+    mean_unscaled = scaler.inverse_transform(mean_prediction.numpy().reshape(1, -1))
+    std_unscaled = scaler.inverse_transform(std_prediction.numpy().reshape(1, -1))
+    
+    return mean_unscaled[0], std_unscaled[0]
 
 def train_and_predict(filtered_dfs, products_info, test_dfs, date_column, price_column, test_index=0):
     """
@@ -122,30 +110,41 @@ def train_and_predict(filtered_dfs, products_info, test_dfs, date_column, price_
     product_names = list(products_info.keys())
 
     # LSTM 모델 학습
-    model, scaler, history = train_lstm_model(combined_data, product_names)
-
+    try:
+        model, scaler, history = train_lstm_model(combined_data, product_names)
+    except Exception as e:
+        print(f"모델 학습 중 오류 발생: {str(e)}")
+        return None
+    
     # 특정 테스트 데이터에 대한 예측
-    predictions = {product: [] for product in product_names}
+    predictions = {product: {'mean': [], 'std': []} for product in product_names}
     dates = []
 
     test_df = test_dfs[test_index]
     test_data = np.column_stack([test_df[product][price_column].values for product in product_names])
     test_data_scaled = scaler.transform(test_data)
+    
     for i in range(len(test_data_scaled)):
         if i < 60:
             last_sequence = np.pad(test_data_scaled[:i+1], ((60-i-1, 0), (0, 0)), mode='edge')
         else:
             last_sequence = test_data_scaled[i-60:i]
         
-        predicted_price = predict_prices(model, scaler, last_sequence)
+        predicted_mean, predicted_std = predict_prices(model, scaler, last_sequence)
         for j, product in enumerate(product_names):
-            predictions[product].append(predicted_price[j])
+            predictions[product]['mean'].append(predicted_mean[j])
+            predictions[product]['std'].append(predicted_std[j])
         
         dates.append(test_df[product_names[0]][date_column].iloc[i])
 
     # 예측 결과를 DataFrame으로 변환
     for product in product_names:
-        predictions[product] = pd.DataFrame({'ds': dates, 'yhat': predictions[product]})
+        predictions[product] = pd.DataFrame({
+            'ds': dates, 
+            'yhat': predictions[product]['mean'],
+            'yhat_lower': np.array(predictions[product]['mean']) - 2 * np.array(predictions[product]['std']),
+            'yhat_upper': np.array(predictions[product]['mean']) + 2 * np.array(predictions[product]['std'])
+        })
         # NaN 또는 Inf 값 확인
         invalid_values = predictions[product]['yhat'].isnull() | np.isinf(predictions[product]['yhat'])
         if invalid_values.any():
@@ -178,6 +177,7 @@ def plot_lstm_forecast_with_test(predictions, test_dfs, date_column, price_colum
 
         ax.plot(actual[date_column], actual[price_column], label='실제 가격', color='blue')
         ax.plot(forecast['ds'], forecast['yhat'], label='예측 가격', color='red')
+        ax.fill_between(forecast['ds'], forecast['yhat_lower'], forecast['yhat_upper'], color='red', alpha=0.2, label='95% 신뢰 구간')
         
         ax.set_title(f'{product} 가격 예측')
         ax.set_xlabel('날짜')
@@ -215,6 +215,7 @@ def plot_lstm_forecast_only(predictions, date_column, price_column, output_dir=N
         ax = axs[i]
 
         ax.plot(forecast['ds'], forecast['yhat'], label='예측 가격', color='red')
+        ax.fill_between(forecast['ds'], forecast['yhat_lower'], forecast['yhat_upper'], color='red', alpha=0.2, label='95% 신뢰 구간')
         
         ax.set_title(f'{product} 가격 예측')
         ax.set_xlabel('날짜')
@@ -223,8 +224,8 @@ def plot_lstm_forecast_only(predictions, date_column, price_column, output_dir=N
         ax.tick_params(axis='x', rotation=45)
 
         # y축 범위 설정
-        y_min = forecast['yhat'].min() * 0.9  # 최소값의 90%
-        y_max = forecast['yhat'].max() * 1.1  # 최대값의 110%
+        y_min = forecast['yhat_lower'].min() * 0.9
+        y_max = forecast['yhat_upper'].max() * 1.1
         ax.set_ylim(y_min, y_max)
 
     # 사용하지 않는 서브플롯 제거

@@ -121,25 +121,25 @@ def main():
     # 4. 모델 학습
     # LSTM 모델 학습 및 예측
     # lstm_models, lstm_scalers, lstm_predictions = train_and_predict_lstm(filtered_dfs, products_info, base_output_dir)
-    lstm_models_test, lstm_scalers_test, lstm_predictions_test = train_and_predict_lstm_with_test_multi(filtered_dfs, test_dataframes, products_info, None)
+    # lstm_models_test, lstm_scalers_test, lstm_predictions_test = train_and_predict_lstm_with_test_multi(filtered_dfs, test_dataframes, products_info, None)
     # LSTM 모델 학습 및 예측 (첫 번째 테스트 데이터셋 사용)
-    # test_index = 0
-    # predictions = lstm_pp.train_and_predict(filtered_dfs, products_info, test_dataframes, "시점", "평균가격(원)", test_index=test_index)
+    test_index = 0
+    predictions = lstm_pp.train_and_predict(filtered_dfs, products_info, test_dataframes, "시점", "평균가격(원)", test_index=test_index)
     
-    # # predictions 출력
-    # print("\n예측 결과:")
-    # for product, pred_df in predictions.items():
-    #     print(f"\n{product}:")
-    #     print(pred_df.to_string(index=False))
+    # predictions 출력
+    print("\n예측 결과:")
+    for product, pred_df in predictions.items():
+        print(f"\n{product}:")
+        print(pred_df.to_string(index=False))
 
-    # # 모든 예측 결과를 하나의 DataFrame으로 결합
-    # all_predictions = pd.DataFrame()
-    # for product, pred_df in predictions.items():
-    #     pred_df['product'] = product
-    #     all_predictions = pd.concat([all_predictions, pred_df])
+    # 모든 예측 결과를 하나의 DataFrame으로 결합
+    all_predictions = pd.DataFrame()
+    for product, pred_df in predictions.items():
+        pred_df['product'] = product
+        all_predictions = pd.concat([all_predictions, pred_df])
 
     # 결과 시각화
-    #lstm_pp.plot_lstm_forecast_with_test(predictions, test_dataframes, "시점", "평균가격(원)", test_index=test_index, output_dir=None)
+    lstm_pp.plot_lstm_forecast_with_test(predictions, test_dataframes, "시점", "평균가격(원)", test_index=test_index, output_dir=None)
     
     ## 예측 결과만 시각화
     # lstm_pp.plot_lstm_forecast_only(predictions, "시점", "평균가격(원)", output_dir=None)
