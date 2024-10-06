@@ -3,9 +3,12 @@ import seaborn as sns
 import pandas as pd
 from typing import List, Optional
 import matplotlib.font_manager as fm
+from agripriceforecast.config_reader import read_config
 
 # 한글 폰트 설정
-font_path = '/System/Library/Fonts/AppleSDGothicNeo.ttc'  # macOS 기본 한글 폰트
+config = read_config()
+font_path = config['Fonts']['korean_font']
+# font_path = '/System/Library/Fonts/AppleSDGothicNeo.ttc'  # macOS 기본 한글 폰트
 font_prop = fm.FontProperties(fname=font_path)
 plt.rcParams['font.family'] = font_prop.get_name()
 plt.rcParams['axes.unicode_minus'] = False  # 마이너스 기호 깨짐 방지

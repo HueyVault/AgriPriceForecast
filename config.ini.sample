@@ -1,0 +1,7 @@
+[Paths]
+train_data = ./data/train/train.csv
+test_data_dir = ./data/test/
+output_dir = ./data/output/train_data
+
+[Fonts]
+korean_font = /System/Library/Fonts/AppleSDGothicNeo.ttc

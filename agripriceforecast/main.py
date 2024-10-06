@@ -10,6 +10,7 @@ from graph_plotter import plot_multiple_products
 import models.prophet_price_predictor as pp
 import models.LSTM_price_predicator_multi as lstm_pp_multi
 import models.LSTM_price_predicator as lstm_pp
+from agripriceforecast.config_reader import read_config
 
 
 def convert_to_date(date_str):
@@ -83,6 +84,12 @@ def train_and_predict_lstm_with_test_multi(train_dfs, test_dfs, products_info, b
 
 def main():
  
+    config = read_config()
+        
+    file_path = config['Paths']['train_data'] # file_path = "./data/train/train.csv" # CSV 파일 경로를 지정하세요
+    directory_path = config['Paths']['test_data_dir'] # directory_path = './data/test/'
+    base_output_dir = config['Paths']['output_dir'] # base_output_dir = "./data/output/train_data"  # CSV 파일을 저장할 디렉토리 경로
+    
     # 필요한 품목 및 세부 정보
     products_info: Dict[str, Dict[str, Union[str, List[str]]]] = {
         '건고추': {'품종명': '화건', '거래단위': '30 kg', '등급': '상품'},
@@ -97,25 +104,22 @@ def main():
         '대파': {'품종명': '대파(일반)', '거래단위': '1키로단', '등급': '상'}
     }
     
-    file_path = "./data/train/train.csv" # CSV 파일 경로를 지정하세요
     
     # 1. train 데이터 로드
     filtered_dfs = dl.filter_agri_products(file_path, products_info)
 
     # 2. 테스트 데이터 로드
-    directory_path = './data/test/'
     test_dataframes = dl.read_test_files(directory_path, products_info)
 
     #print(test_dataframes[0])
     # # 데이터 시각화
     # # 여러 제품 비교 그래프
-    # plot_multiple_products(filtered_dfs, list(products_info.keys()), "시점", "평균가격(원)", "제품 가격 비교")
+    plot_multiple_products(filtered_dfs, list(products_info.keys()), "시점", "평균가격(원)", "제품 가격 비교")
 
     # # 3. 데이터 전처리
 
     # # 모델에 넣을 데이터 미리 저장
     # # filtered_dfs를 CSV 파일로 저장
-    # base_output_dir = "./data/output/train_data"  # CSV 파일을 저장할 디렉토리 경로
     # dl.save_dataframes_to_csv(filtered_dfs, list(products_info.keys()), base_output_dir)
 
     # 4. 모델 학습
@@ -123,23 +127,23 @@ def main():
     # lstm_models, lstm_scalers, lstm_predictions = train_and_predict_lstm(filtered_dfs, products_info, base_output_dir)
     # lstm_models_test, lstm_scalers_test, lstm_predictions_test = train_and_predict_lstm_with_test_multi(filtered_dfs, test_dataframes, products_info, None)
     # LSTM 모델 학습 및 예측 (첫 번째 테스트 데이터셋 사용)
-    test_index = 0
-    predictions = lstm_pp.train_and_predict(filtered_dfs, products_info, test_dataframes, "시점", "평균가격(원)", test_index=test_index)
+    # test_index = 0
+    # predictions = lstm_pp.train_and_predict(filtered_dfs, products_info, test_dataframes, "시점", "평균가격(원)", test_index=test_index)
     
-    # predictions 출력
-    print("\n예측 결과:")
-    for product, pred_df in predictions.items():
-        print(f"\n{product}:")
-        print(pred_df.to_string(index=False))
+    # # predictions 출력
+    # print("\n예측 결과:")
+    # for product, pred_df in predictions.items():
+    #     print(f"\n{product}:")
+    #     print(pred_df.to_string(index=False))
 
-    # 모든 예측 결과를 하나의 DataFrame으로 결합
-    all_predictions = pd.DataFrame()
-    for product, pred_df in predictions.items():
-        pred_df['product'] = product
-        all_predictions = pd.concat([all_predictions, pred_df])
+    # # 모든 예측 결과를 하나의 DataFrame으로 결합
+    # all_predictions = pd.DataFrame()
+    # for product, pred_df in predictions.items():
+    #     pred_df['product'] = product
+    #     all_predictions = pd.concat([all_predictions, pred_df])
 
-    # 결과 시각화
-    lstm_pp.plot_lstm_forecast_with_test(predictions, test_dataframes, "시점", "평균가격(원)", test_index=test_index, output_dir=None)
+    # # 결과 시각화
+    # lstm_pp.plot_lstm_forecast_with_test(predictions, test_dataframes, "시점", "평균가격(원)", test_index=test_index, output_dir=None)
     
     ## 예측 결과만 시각화
     # lstm_pp.plot_lstm_forecast_only(predictions, "시점", "평균가격(원)", output_dir=None)

@@ -4,9 +4,12 @@ from typing import List, Dict, Optional
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
+from agripriceforecast.config_reader import read_config
 
+config = read_config()
+font_path = config['Fonts']['korean_font']
 # 한글 폰트 설정
-font_path = '/System/Library/Fonts/AppleSDGothicNeo.ttc'  # macOS 기본 한글 폰트
+# font_path = '/System/Library/Fonts/AppleSDGothicNeo.ttc'  # macOS 기본 한글 폰트
 font_prop = fm.FontProperties(fname=font_path)
 plt.rcParams['font.family'] = font_prop.get_name()
 plt.rcParams['axes.unicode_minus'] = False  # 마이너스 기호 깨짐 방지

@@ -3,15 +3,15 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 import tensorflow as tf
 import matplotlib.pyplot as plt
-import tensorflow_probability as tfp
-import tf_keras
+# import tensorflow_probability as tfp
+# import tf_keras
 
-tfd = tfp.distributions
-tfpl = tfp.layers
+# tfd = tfp.distributions
+# tfpl = tfp.layers
 
 print(f"TensorFlow version: {tf.__version__}")
-print(f"TensorFlow Probability version: {tfp.__version__}")
-print(f"TF-Keras version: {tf_keras.__version__}")
+# print(f"TensorFlow Probability version: {tfp.__version__}")
+# print(f"TF-Keras version: {tf_keras.__version__}")
 
 def create_dataset(dataset, time_step=1):
     """
@@ -28,40 +28,34 @@ def create_dataset(dataset, time_step=1):
         dataY.append(dataset[i + time_step, :])
     return np.array(dataX), np.array(dataY)
 
-def train_lstm_model(data, product_names, time_step=60, epochs=100, batch_size=32):
-    # 데이터 전처리
+def create_mc_dropout_lstm_model(time_step, n_features, dropout_rate=0.2):
+    model = tf.keras.Sequential([
+        tf.keras.layers.LSTM(100, return_sequences=True, input_shape=(time_step, n_features)),
+        tf.keras.layers.Dropout(dropout_rate),
+        tf.keras.layers.LSTM(100, return_sequences=True),
+        tf.keras.layers.Dropout(dropout_rate),
+        tf.keras.layers.LSTM(100),
+        tf.keras.layers.Dropout(dropout_rate),
+        tf.keras.layers.Dense(n_features)
+    ])
+    return model
+
+def train_lstm_model(data, product_names, time_step=60, epochs=100, batch_size=32, dropout_rate=0.2):
     scaler = MinMaxScaler(feature_range=(0,1))
     data_scaled = scaler.fit_transform(data)
     
-    # 데이터셋 생성
     X, y = create_dataset(data_scaled, time_step)
     
-    # 학습 데이터와 검증 데이터 분리
     train_size = int(len(X) * 0.8)
     X_train, X_val = X[:train_size], X[train_size:]
     y_train, y_val = y[:train_size], y[train_size:]
     
-    # LSTM 모델 생성
-    model = tf.keras.Sequential([
-        tf.keras.layers.LSTM(100, return_sequences=True, input_shape=(time_step, len(product_names))),
-        tf.keras.layers.LSTM(100, return_sequences=True),
-        tf.keras.layers.LSTM(100),
-        tf.keras.layers.Dense(len(product_names) * 2)  # 평균과 표준편차를 위해 출력 크기를 2배로
-    ])
+    model = create_mc_dropout_lstm_model(time_step, len(product_names), dropout_rate)
 
-    def negative_log_likelihood(y_true, y_pred):
-        n_dims = len(product_names)
-        mu = y_pred[:, :n_dims]
-        sigma = tf.math.softplus(y_pred[:, n_dims:])  # 표준편차는 항상 양수여야 함
-        dist = tfp.distributions.Normal(loc=mu, scale=sigma)
-        return -dist.log_prob(y_true)
-
-    model.compile(loss=negative_log_likelihood, optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
+    model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
     
-    # 조기 종료 콜백 추가
     early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
     
-    # 모델 학습
     history = model.fit(X_train, y_train, 
                         epochs=epochs, 
                         batch_size=batch_size, 
@@ -69,7 +63,6 @@ def train_lstm_model(data, product_names, time_step=60, epochs=100, batch_size=3
                         callbacks=[early_stopping],
                         verbose=1)
     
-    # 학습 결과 평가
     train_loss = model.evaluate(X_train, y_train, verbose=0)
     val_loss = model.evaluate(X_val, y_val, verbose=0)
     print(f"Train Loss: {train_loss:.4f}")
@@ -77,14 +70,26 @@ def train_lstm_model(data, product_names, time_step=60, epochs=100, batch_size=3
     
     return model, scaler, history
 
+def predict_prices_with_uncertainty(model, scaler, last_sequence, num_samples=100):
+    X = last_sequence.reshape((1, last_sequence.shape[0], last_sequence.shape[1]))
+    predictions = []
+    for _ in range(num_samples):
+        prediction = model(X, training=True)  # Enable dropout during prediction
+        predictions.append(prediction)
+    
+    predictions = np.array(predictions).squeeze()
+    mean_prediction = np.mean(predictions, axis=0)
+    std_prediction = np.std(predictions, axis=0)
+    
+    mean_unscaled = scaler.inverse_transform(mean_prediction.reshape(1, -1))
+    std_unscaled = scaler.inverse_transform(std_prediction.reshape(1, -1))
+    
+    return mean_unscaled[0], std_unscaled[0]
+
 def predict_prices(model, scaler, last_sequence, num_samples=100):
     X = last_sequence.reshape((1, last_sequence.shape[0], last_sequence.shape[1]))
-    y_pred = model.predict(X)
-    n_dims = len(y_pred[0]) // 2
-    mu = y_pred[0, :n_dims]
-    sigma = tf.math.softplus(y_pred[0, n_dims:])
-    dist = tfp.distributions.Normal(loc=mu, scale=sigma)
-    samples = dist.sample(num_samples)
+    predictions = model(X)
+    samples = predictions.sample(num_samples)
     mean_prediction = tf.reduce_mean(samples, axis=0)
     std_prediction = tf.math.reduce_std(samples, axis=0)
     
@@ -94,29 +99,11 @@ def predict_prices(model, scaler, last_sequence, num_samples=100):
     return mean_unscaled[0], std_unscaled[0]
 
 def train_and_predict(filtered_dfs, products_info, test_dfs, date_column, price_column, test_index=0):
-    """
-    모든 품목의 데이터를 하나의 LSTM 모델로 학습하고 특정 테스트 데이터에 대한 예측을 수행합니다.
-
-    :param filtered_dfs: 학습용 데이터프레임 리스트
-    :param products_info: 품목 정보 딕셔너리
-    :param test_dfs: 테스트 데이터프레임 리스트
-    :param date_column: 날짜 열 이름
-    :param price_column: 가격 열 이름
-    :param test_index: 사용할 테스트 데이터의 인덱스
-    :return: 예측 결과 딕셔너리
-    """
-    # 모든 품목의 가격 데이터를 하나의 2D 배열로 결합
     combined_data = np.column_stack([df[price_column].values for df in filtered_dfs])
     product_names = list(products_info.keys())
 
-    # LSTM 모델 학습
-    try:
-        model, scaler, history = train_lstm_model(combined_data, product_names)
-    except Exception as e:
-        print(f"모델 학습 중 오류 발생: {str(e)}")
-        return None
+    model, scaler, history = train_lstm_model(combined_data, product_names)
     
-    # 특정 테스트 데이터에 대한 예측
     predictions = {product: {'mean': [], 'std': []} for product in product_names}
     dates = []
 
@@ -130,14 +117,13 @@ def train_and_predict(filtered_dfs, products_info, test_dfs, date_column, price_
         else:
             last_sequence = test_data_scaled[i-60:i]
         
-        predicted_mean, predicted_std = predict_prices(model, scaler, last_sequence)
+        predicted_mean, predicted_std = predict_prices_with_uncertainty(model, scaler, last_sequence)
         for j, product in enumerate(product_names):
             predictions[product]['mean'].append(predicted_mean[j])
             predictions[product]['std'].append(predicted_std[j])
         
         dates.append(test_df[product_names[0]][date_column].iloc[i])
 
-    # 예측 결과를 DataFrame으로 변환
     for product in product_names:
         predictions[product] = pd.DataFrame({
             'ds': dates, 
