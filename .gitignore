@@ -6,7 +6,9 @@ Thumbs.db
 config.ini
 
 # 가상 환경
+myenv/
 venv/
+
 # 편집기/IDE 관련 파일
 .vscode/
 .idea/
@@ -55,3 +57,10 @@ temp/
 
 # 데이터베이스 파일
 *.sqlite
+
+# Python 캐시 파일 무시
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
