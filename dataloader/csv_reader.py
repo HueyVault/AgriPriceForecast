@@ -84,3 +84,54 @@ def save_dataframes_to_csv(dataframes: List[pd.DataFrame], product_names: List[s
         df.to_csv(file_path, index=False, encoding='utf-8-sig')
         print(f"{product_name} 데이터가 {file_path}에 저장되었습니다.")
 
+
+def read_test_files(directory_path: str, products_info: Dict[str, Dict[str, Union[str, List[str]]]], num_files: int = 25) -> List[Dict[str, pd.DataFrame]]:
+    """
+    지정된 디렉토리에서 TEST_XX.csv 파일들을 읽고, 각 파일에서 지정된 품목의 데이터프레임을 추출합니다.
+    
+    :param directory_path: CSV 파일들이 있는 디렉토리 경로
+    :param products_info: 품목별 필터링 조건을 포함하는 딕셔너리
+    :param num_files: 읽을 파일의 수 (기본값: 25)
+    :return: 각 파일별로 지정된 품목의 데이터프레임을 포함하는 리스트
+    """
+    all_dataframes = []
+
+    for filenum in range(num_files):
+        filename = f'TEST_{filenum:02d}.csv'
+        file_path = os.path.join(directory_path, filename)
+        try:
+            # CSV 파일 읽기
+            df = pd.read_csv(file_path, encoding='utf-8')
+            
+            # 각 품목별로 데이터프레임 추출
+            file_dataframes = {}
+            for product, info in products_info.items():
+                # 품목명으로 필터링
+                filtered_df = df[df['품목명'] == product]
+                
+                # 품종명 필터링 (리스트인 경우 or 조건 적용)
+                if isinstance(info['품종명'], list):
+                    filtered_df = filtered_df[filtered_df['품종명'].isin(info['품종명'])]
+                else:
+                    filtered_df = filtered_df[filtered_df['품종명'] == info['품종명']]
+                
+                # 거래단위와 등급으로 필터링
+                filtered_df = filtered_df[
+                    (filtered_df['거래단위'] == info['거래단위']) & 
+                    (filtered_df['등급'] == info['등급'])
+                ]
+                
+                # 인덱스 재설정
+                filtered_df = filtered_df.reset_index(drop=True)
+                filtered_df.index += 1  # 인덱스를 1부터 시작하도록 설정
+                
+                file_dataframes[product] = filtered_df
+            
+            all_dataframes.append(file_dataframes)
+            print(f"{filename} 파일을 성공적으로 읽었습니다.")
+        except Exception as e:
+            print(f"{filename} 파일 읽기 실패: {str(e)}")
+            # 파일 읽기에 실패한 경우 빈 딕셔너리를 추가하여 순서 유지
+            all_dataframes.append({})
+    
+    return all_dataframes
