@@ -8,6 +8,7 @@ import dataloader.csv_reader as dl
 import pandas as pd
 from graph_plotter import plot_multiple_products
 import models.prophet_price_predictor as pp
+import models.LSTM_price_predicator as lstm_pp
 
 def convert_to_date(date_str):
     year = int(date_str[:4])
@@ -22,6 +23,34 @@ def convert_to_date(date_str):
         day = 25
     
     return pd.to_datetime(f'{year}-{month:02d}-{day:02d}')
+
+
+def train_and_predict_lstm(filtered_dfs, products_info, base_output_dir):
+    # LSTM 모델 학습
+    models, scalers = lstm_pp.train_multiple_lstm_models(filtered_dfs, products_info, "시점", "평균가격(원)")
+    
+    print("학습된 LSTM 모델:")
+    for product in products_info.keys():
+        print(f"- {product}")
+    
+    # 미래 가격 예측
+    predictions = lstm_pp.predict_multiple_products_lstm(models, scalers, filtered_dfs, products_info, "시점", "평균가격(원)", future_steps=7)
+
+    # 예측 결과 출력
+    for product, forecast in predictions.items():
+        print(f"\n{product} 가격 예측 결과 (LSTM):")
+        print(forecast.tail())
+
+    # 결과 시각화
+    forecast_output_dir = os.path.join(base_output_dir, "forecasts_lstm")
+    os.makedirs(forecast_output_dir, exist_ok=True)
+    
+    # 실제 데이터를 딕셔너리 형태로 변환
+    actual_data = {product: df for product, df in zip(products_info.keys(), filtered_dfs)}
+    
+    lstm_pp.plot_lstm_forecast(predictions, actual_data, "시점", "평균가격(원)",  None)
+
+    return models, scalers, predictions
 
 def train_and_predict(filtered_dfs, products_info, base_output_dir):
     # Prophet 모델 학습
@@ -128,12 +157,17 @@ def main():
     # dl.save_dataframes_to_csv(filtered_dfs, list(products_info.keys()), base_output_dir)
 
     # 모델 학습
-    # 데이터 전처리 및 결합
-    model, predictions = train_and_predict_combined(filtered_dfs, products_info, base_output_dir)
+     # LSTM 모델 학습 및 예측
+    lstm_models, lstm_scalers, lstm_predictions = train_and_predict_lstm(filtered_dfs, products_info, base_output_dir)
+
+    print("LSTM 모델 학습 및 예측이 완료되었습니다.")
 
     # Prophet 모델 학습
     # 모델 학습 및 예측
-    #models, predictions = train_and_predict(filtered_dfs, products_info, base_output_dir)
+    # models, predictions = train_and_predict(filtered_dfs, products_info, base_output_dir)
+    # 데이터 전처리 및 결합
+    # model, predictions = train_and_predict_combined(filtered_dfs, products_info, base_output_dir)
+
 
     # 모델 평가
 
