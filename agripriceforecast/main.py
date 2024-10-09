@@ -124,8 +124,17 @@ def main():
     # dl.save_dataframes_to_csv(filtered_dfs, list(products_info.keys()), base_output_dir)
 
     # 4. 모델 학습
+
+    # 4-1. # LSTM 하이퍼파라미터 설정
+    lstm_hyperparams = {
+        'time_step': 60,
+        'epochs': 100,
+        'batch_size': 32,
+        'dropout_rate': 0.2,
+        'learning_rate': 0.001
+    }
     # XGBoost 모델 학습 및 예측
-    xgboost_predictions = xgb_pp.train_and_predict_xgboost(filtered_dfs, test_dataframes, products_info, "시점", "평균가격(원)")
+    # xgboost_predictions = xgb_pp.train_and_predict_xgboost(filtered_dfs, test_dataframes, products_info, "시점", "평균가격(원)")
     
     # 예측 결과 출력
     # for product, pred_list in xgboost_predictions.items():
@@ -135,10 +144,12 @@ def main():
     #         print(pred_df.tail())
 
     # 결과 시각화
-    xgb_pp.plot_xgboost_forecast(xgboost_predictions, test_dataframes, "시점", "평균가격(원)", base_output_dir)
+    #xgb_pp.plot_xgboost_forecast(xgboost_predictions, test_dataframes, "시점", "평균가격(원)", base_output_dir)
 
 
     # LSTM 모델 학습 및 예측
+    lstm_predictions = lstm_pp.train_and_predict(filtered_dfs, products_info, test_dataframes, "시점", "평균가격(원)", 0,lstm_hyperparams)
+
     # lstm_models, lstm_scalers, lstm_predictions = train_and_predict_lstm(filtered_dfs, products_info, base_output_dir)
     # lstm_models_test, lstm_scalers_test, lstm_predictions_test = train_and_predict_lstm_with_test_multi(filtered_dfs, test_dataframes, products_info, None)
     # # LSTM 모델 학습 및 예측 (첫 번째 테스트 데이터셋 사용)

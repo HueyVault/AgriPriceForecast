@@ -40,7 +40,7 @@ def create_mc_dropout_lstm_model(time_step, n_features, dropout_rate=0.2):
     ])
     return model
 
-def train_lstm_model(data, product_names, time_step=60, epochs=100, batch_size=32, dropout_rate=0.2):
+def train_lstm_model(data, product_names, time_step=60, epochs=100, batch_size=32, dropout_rate=0.2, learning_rate=0.001):
     scaler = MinMaxScaler(feature_range=(0,1))
     data_scaled = scaler.fit_transform(data)
     
@@ -52,7 +52,7 @@ def train_lstm_model(data, product_names, time_step=60, epochs=100, batch_size=3
     
     model = create_mc_dropout_lstm_model(time_step, len(product_names), dropout_rate)
 
-    model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
+    model.compile(loss='mse', optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate))
     
     early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
     
@@ -98,11 +98,14 @@ def predict_prices(model, scaler, last_sequence, num_samples=100):
     
     return mean_unscaled[0], std_unscaled[0]
 
-def train_and_predict(filtered_dfs, products_info, test_dfs, date_column, price_column, test_index=0):
+def train_and_predict(filtered_dfs, products_info, test_dfs, date_column, price_column, test_index=0, lstm_hyperparams = None):
     combined_data = np.column_stack([df[price_column].values for df in filtered_dfs])
     product_names = list(products_info.keys())
 
-    model, scaler, history = train_lstm_model(combined_data, product_names)
+    if lstm_hyperparams is None:
+        lstm_hyperparams = {}
+    
+    model, scaler, history = train_lstm_model(combined_data, product_names, **lstm_hyperparams)
     
     predictions = {product: {'mean': [], 'std': []} for product in product_names}
     dates = []
